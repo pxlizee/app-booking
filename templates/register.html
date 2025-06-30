@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Registrasi Akun{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-6">
+        <div class="card p-4 shadow-sm post-card">
+            <h2 class="card-title text-center mb-4">Registrasi Akun Dosen</h2>
+            <p class="text-center text-muted">Buat akun Anda untuk mulai membuat jadwal.</p>
+            <form method="POST" action="{{ url_for('register') }}">
+                <div class="mb-3">
+                    <label for="username" class="form-label">Username</label>
+                    <input type="text" class="form-control" id="username" name="username" required>
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">Password</label>
+                    <input type="password" class="form-control" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn btn-success w-100">Register</button>
+            </form>
+            <div class="mt-3 text-center">
+                <small>Sudah punya akun? <a href="{{ url_for('login') }}">Login di sini</a></small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

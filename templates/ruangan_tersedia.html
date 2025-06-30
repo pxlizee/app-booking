@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}Ketersediaan Ruangan{% endblock %}
+
+{% block content %}
+<div class="post-card p-4 mb-4">
+    <h2 class="card-title mb-3"><i class="bi bi-calendar-day me-2"></i>Pilih Hari</h2>
+    <form action="{{ url_for('halaman_ruangan_tersedia') }}" method="GET" class="row g-2 align-items-end">
+        <div class="col-md-9">
+            <label for="hari" class="form-label">Pilih hari untuk melihat ketersediaan ruangan:</label>
+            <select name="hari" id="hari" class="form-select">
+                <option value="" disabled {% if not selected_day %}selected{% endif %}>-- Pilih Hari --</option>
+                {% for day in days %}
+                <option value="{{ day }}" {% if selected_day == day %}selected{% endif %}>{{ day }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3 d-grid">
+            <button type="submit" class="btn btn-primary">Tampilkan</button>
+        </div>
+    </form>
+</div>
+
+{% if selected_day %}
+<div class="post-card p-4">
+    <h2 class="card-title mb-3"><i class="bi bi-clock me-2"></i>Ketersediaan Ruangan <span class="fs-5 text-muted">(Hari {{ selected_day }})</span></h2>
+    {% if room_availability_blocks %}
+        <div class="row row-cols-1 row-cols-lg-2 row-cols-xl-3 g-4">
+            {% for room, blocks in room_availability_blocks.items() %}
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-header bg-dark text-white">
+                        <i class="bi bi-building me-2"></i> <strong>{{ room }}</strong>
+                    </div>
+                    <div class="card-body p-0" style="max-height: 350px; overflow-y: auto;">
+                        <ul class="list-group list-group-flush">
+                            {% for block in blocks %}
+                                {% set is_available = block.status == 'Tersedia' %}
+                                {% set tag = 'a' if is_available else 'li' %}
+                                {% set href = url_for('halaman_jadwal', action='new', day=selected_day, room=room, start_time=block.start, end_time=block.end, tipe_kelas='Offline') if is_available %}
+                                
+                                <{{ tag }} href="{{ href if is_available }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center {% if is_available %}list-group-item-success{% elif block.status == 'Terpakai' %}list-group-item-danger{% else %}list-group-item-secondary{% endif %}">
+                                    <span><i class="bi bi-alarm me-2"></i>{{ block.start }} - {{ block.end }}</span>
+                                    <span class="badge rounded-pill bg-dark">{{ block.status }}</span>
+                                </{{ tag }}>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info text-center">Tidak ada data untuk hari ini.</div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

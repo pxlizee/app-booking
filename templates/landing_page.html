@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{# Ini adalah judul halaman spesifik untuk landing page #}
+{% block title %}Landing Page{% endblock %}
+
+{# Ini adalah blok konten utama untuk landing page #}
+{% block content %}
+<h2 class="text-center mb-4">Selamat Datang di Aplikasi Booking Jadwal!</h2>
+<p class="lead text-center mb-5">Pilih salah satu fitur di bawah ini untuk memulai.</p>
+
+{# Container untuk kartu-kartu fitur, menggunakan kelas Bootstrap Flexbox untuk tata letak #}
+{# row-cols-1, row-cols-md-2, row-cols-lg-4 mengatur jumlah kolom per baris untuk ukuran layar berbeda #}
+{# g-4 menambahkan celah (gutter) antara kolom #}
+{# justify-content-center untuk menengahkan kartu jika jumlahnya tidak penuh dalam satu baris #}
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4 justify-content-center">
+    {# Kartu Fitur: Lihat Jadwal #}
+    <div class="col d-flex"> {# d-flex di sini membuat setiap kolom menjadi kontainer flex untuk memastikan semua kartu memiliki tinggi yang sama di satu baris #}
+        <div class="card shadow-sm w-100"> {# card untuk gaya kartu, shadow-sm untuk bayangan, w-100 untuk mengisi lebar penuh kolom #}
+            <div class="card-body d-flex flex-column"> {# card-body adalah isi kartu; d-flex flex-column untuk menyusun elemen secara vertikal #}
+                <h3 class="card-title text-center text-secondary mb-3"><i class="bi bi-search me-2"></i>Lihat Jadwal</h3>
+                <p class="card-text text-center flex-grow-1">Lihat semua jadwal yang sudah ter-booking.</p> {# flex-grow-1 membuat elemen <p> ini memanjang mengisi ruang yang tersedia, mendorong elemen berikutnya ke bawah #}
+                <div class="mt-auto text-center"> {# mt-auto (margin-top: auto) adalah properti kunci yang mendorong div ini (dan tombol di dalamnya) ke bagian bawah container flex #}
+                    <a href="{{ url_for('halaman_jadwal') }}" class="btn btn-secondary w-100">Buka Halaman</a> {# w-100 membuat tombol selebar 100% dari parent-nya #}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Kartu Fitur: Booking Manual #}
+    <div class="col d-flex">
+        <div class="card shadow-sm w-100 bg-primary text-white">
+            <div class="card-body d-flex flex-column">
+                <h3 class="card-title text-center text-white mb-3"><i class="bi bi-calendar-plus me-2"></i>Booking Manual</h3>
+                <p class="card-text text-center flex-grow-1">Pesan satu jadwal baru secara manual.</p>
+                <div class="mt-auto text-center">
+                    <a href="{{ url_for('halaman_booking') }}" class="btn btn-light w-100">Buka Halaman</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Kartu Fitur: Ruangan Tersedia #}
+    <div class="col d-flex">
+        <div class="card shadow-sm w-100 bg-info bg-opacity-25 border-info">
+            <div class="card-body d-flex flex-column">
+                <h3 class="card-title text-center text-info mb-3"><i class="bi bi-door-open me-2"></i>Ruangan Tersedia</h3>
+                <p class="card-text text-center flex-grow-1">Cari slot dan ruangan yang kosong.</p>
+                <div class="mt-auto text-center">
+                    <a href="{{ url_for('halaman_ruangan_tersedia') }}" class="btn btn-outline-info w-100">Buka Halaman</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# --- PERUBAHAN: Sembunyikan kartu Generate Jadwal dari role selain 'admin' --- #}
+    {% if current_user.role == 'admin' %}
+    {# Kartu Fitur: Generate Jadwal #}
+    <div class="col d-flex">
+        <div class="card shadow-sm w-100 bg-warning bg-opacity-25 border-warning">
+            <div class="card-body d-flex flex-column">
+                <h3 class="card-title text-center text-warning mb-3"><i class="bi bi-stars me-2"></i>Generate Jadwal</h3>
+                <p class="card-text text-center flex-grow-1">Buat jadwal satu semester dari file.</p>
+                <div class="mt-auto text-center">
+                    <a href="{{ url_for('halaman_generate') }}" class="btn btn-outline-warning w-100">Buka Halaman</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {# --- AKHIR PERUBAHAN --- #}
+
+</div>
+
+{% endblock %}
+
+{# Blok skrip opsional jika Anda memiliki JavaScript spesifik untuk halaman ini #}
+{% block scripts %}
+<script>
+    // Anda dapat menambahkan kode JavaScript di sini jika diperlukan.
+</script>
+{% endblock %}
+
+{# Blok head_css opsional. Dalam kasus ini, kita menggunakan kelas utilitas Bootstrap, jadi tidak perlu CSS kustom tambahan di sini. #}
+{% block head_css %}
+{# Jika Anda ingin menambahkan CSS khusus di head untuk halaman ini saja, letakkan di sini #}
+<style>
+    /* Contoh: Jika Anda ingin menyesuaikan lebih lanjut */
+    /* .card-body .btn { margin-bottom: 0; } */
+</style>
+{% endblock %}
