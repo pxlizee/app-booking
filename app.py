@@ -524,11 +524,7 @@ def init_database():
             db.session.commit()
 
 if __name__ == '__main__':
-    # Hapus file DB jika ada untuk testing ulang dari awal
-    # if os.path.exists(db_path):
-    #     os.remove(db_path)
-    #     print("Database file deleted for a fresh start.")
-        
+       
     with app.app_context():
         if not os.path.exists(db_path):
             init_database()
