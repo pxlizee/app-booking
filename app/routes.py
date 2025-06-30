@@ -1,3 +1,4 @@
+
 import pandas as pd
 from flask import (
     render_template, request, redirect, url_for, flash, send_file, 
@@ -8,11 +9,19 @@ from datetime import datetime, time, timedelta
 from sqlalchemy import or_
 import io
 from collections import defaultdict
+import json
 
 from . import db, bcrypt, login_manager
 from .models import User, Jadwal, Gedung, Lantai, Ruangan
 
 bp = Blueprint('routes', __name__)
+
+generate_progress_status = {
+    'total_items': 0,
+    'processed_items': 0,
+    'status': 'idle',
+    'message': ''
+}
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -237,4 +246,86 @@ def delete_gedung(id):
     flash(f"Gedung '{gedung.nama_gedung}' berhasil dihapus.", "success")
     return redirect(url_for('routes.manage_gedung'))
 
-# Tambahkan rute untuk manage_lantai dan manage_ruangan di sini
+# --- RUTE UNTUK GENERATE DAN IMPORT ---
+
+@bp.route('/generate')
+@login_required
+def halaman_generate():
+    if current_user.role != 'admin':
+        flash("Hanya admin yang bisa mengakses halaman ini.", "danger")
+        return redirect(url_for('routes.landing_page'))
+    # Logika untuk halaman generate jadwal otomatis ada di sini
+    # Untuk saat ini, kita hanya akan merender template-nya
+    return render_template('generate_jadwal.html')
+
+@bp.route('/generate/start', methods=['POST'])
+@login_required
+def start_generation():
+    # Logika kompleks dari 'halaman_generate' lama akan ada di sini
+    # Karena sangat kompleks dan memerlukan adaptasi besar ke database baru,
+    # kita akan menampilkan pesan bahwa fitur ini dalam pengembangan.
+    flash("Fitur Generate Jadwal Otomatis sedang dalam pengembangan lanjut.", "info")
+    return redirect(url_for('routes.halaman_generate'))
+
+
+@bp.route('/import', methods=['GET', 'POST'])
+@login_required
+def halaman_import():
+    if current_user.role != 'admin':
+        flash("Hanya admin yang bisa mengakses halaman ini.", "danger")
+        return redirect(url_for('routes.landing_page'))
+
+    if request.method == 'POST':
+        file = request.files.get('file')
+        if not file or file.filename == '':
+            flash('Tidak ada file yang dipilih.', 'warning')
+            return redirect(request.url)
+
+        try:
+            df = pd.read_excel(file) if file.filename.endswith('.xlsx') else pd.read_csv(file)
+            required_columns = ['Nama Dosen', 'Mata Kuliah', 'SKS', 'Kelas', 'Hari', 'Jam Mulai', 'Jam Selesai', 'Tipe Kelas']
+            if not all(col in df.columns for col in required_columns):
+                flash(f"File harus memiliki kolom: {', '.join(required_columns)}", 'danger')
+                return redirect(request.url)
+
+            jadwal_ditambahkan = 0
+            jadwal_bentrok = 0
+            for _, row in df.iterrows():
+                # Cek bentrok sebelum menambahkan
+                ruangan_id = None
+                if row['Tipe Kelas'] == 'Offline':
+                    ruangan = Ruangan.query.filter_by(nama_ruangan=row.get('Ruangan')).first()
+                    if ruangan:
+                        ruangan_id = ruangan.id
+                    else:
+                        # Jika ruangan tidak ditemukan, lewati atau beri pesan error
+                        continue 
+
+                if not is_bentrok(row['Hari'], row['Jam Mulai'], row['Jam Selesai'], ruangan_id, row['Kelas'], row['Nama Dosen'], row['Tipe Kelas']):
+                    new_jadwal = Jadwal(
+                        nama_dosen=row['Nama Dosen'],
+                        mata_kuliah=row['Mata Kuliah'],
+                        sks=row['SKS'],
+                        kelas=row['Kelas'],
+                        hari=row['Hari'],
+                        jam_mulai=row['Jam Mulai'],
+                        jam_selesai=row['Jam Selesai'],
+                        tipe_kelas=row['Tipe Kelas'],
+                        ruangan_id=ruangan_id,
+                        user_id=current_user.id
+                    )
+                    db.session.add(new_jadwal)
+                    jadwal_ditambahkan += 1
+                else:
+                    jadwal_bentrok += 1
+            
+            db.session.commit()
+            flash(f"Import selesai! {jadwal_ditambahkan} jadwal berhasil ditambahkan. {jadwal_bentrok} jadwal dilewati karena bentrok.", 'success')
+
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Terjadi error saat import file: {e}", 'danger')
+        
+        return redirect(url_for('routes.halaman_jadwal'))
+        
+    return render_template('import_jadwal.html')

@@ -1,151 +1,42 @@
 {% extends 'base.html' %}
 {% block title %}Generate Jadwal Otomatis{% endblock %}
 {% block content %}
-<div class="card p-4 mb-5 shadow-sm" id="generate-form-card">
-    <h2 class="card-title mb-3"><i class="bi bi-robot"></i> Generate Jadwal Otomatis</h2>
-    <hr>
-    <form id="generateForm" action="{{ url_for('halaman_generate') }}" method="POST" enctype="multipart/form-data" class="mt-3">
-        <div class="mb-3">
-            <label for="file" class="form-label">Upload File Excel (.xlsx) atau CSV (.csv)</label>
-            <input class="form-control" type="file" id="file" name="file" accept=".xlsx, .csv" required>
-            <div class="form-text">Pastikan file memiliki kolom: MATA KULIAH, SKS, KELAS, DOSEN PENGAJAR.</div>
+<div class="card border-start border-primary border-5 shadow-lg mb-5">
+    <div class="card-body p-5">
+        <h2 class="card-title mb-3"><i class="bi bi-magic me-2"></i>Generate Jadwal Otomatis</h2>
+        <hr>
+        <p class="text-muted">Fitur ini akan membuat seluruh jadwal satu semester secara otomatis berdasarkan file daftar mata kuliah dan dosen. (Saat ini dalam pengembangan lanjut)</p>
+        
+        <form id="generateForm" action="{{ url_for('routes.start_generation') }}" method="POST" enctype="multipart/form-data" class="mt-4">
+            <div class="mb-3">
+                <label for="file" class="form-label fw-bold">Upload File Excel (.xlsx) atau CSV (.csv)</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-file-earmark-spreadsheet"></i></span>
+                    <input class="form-control" type="file" id="file" name="file" accept=".xlsx, .csv" required>
+                </div>
+                <div class="form-text mt-2">Pastikan file memiliki kolom: MATA KULIAH, SKS, KELAS, DOSEN PENGAJAR.</div>
+            </div>
+            <div class="d-grid">
+                <button type="submit" class="btn btn-dark mt-3"><i class="bi bi-play-circle-fill me-2"></i>Mulai Generate Jadwal</button>
+            </div>
+        </form>
+        <div class="d-grid mt-2">
+            <a href="#" class="btn btn-outline-info w-100"><i class="bi bi-download"></i> Unduh Template Excel</a>
         </div>
-        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-magic"></i> Mulai Generate Jadwal</button>
-    </form>
-    <a href="{{ url_for('download_template') }}" class="btn btn-outline-info w-100 mt-2"><i class="bi bi-download"></i> Unduh Template Excel</a>
+    </div>
 </div>
 
-<div class="card p-4 mb-5 shadow-sm" id="progress-card" style="display: none;">
+<div class="card p-4 mb-5 shadow-lg" id="progress-card" style="display: none;">
     <h2 class="card-title mb-3"><i class="bi bi-hourglass-split"></i> Progres Generate Jadwal</h2>
     <hr>
     <div class="text-center mb-3">
-        <div class="spinner-border text-primary" role="status">
+        <div class="spinner-grow text-info" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
         <p class="mt-2" id="progress-message">Memulai...</p>
     </div>
     <div class="progress" style="height: 30px;">
-        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+        <div id="progressBar" class="progress-bar bg-info progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
     </div>
 </div>
-
-{% endblock %}
-
-{% block scripts %}
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const generateForm = document.getElementById('generateForm');
-        const generateFormCard = document.getElementById('generate-form-card');
-        const progressCard = document.getElementById('progress-card');
-        const progressBar = document.getElementById('progressBar');
-        const progressMessage = document.getElementById('progress-message');
-
-        let intervalId; // Untuk menyimpan ID interval polling
-
-        generateForm.addEventListener('submit', function(event) {
-            event.preventDefault(); // Mencegah submit form secara default
-
-            // Sembunyikan form, tampilkan progress card
-            generateFormCard.style.display = 'none';
-            progressCard.style.display = 'block';
-
-            const formData = new FormData(generateForm); // Ambil data form
-
-            // Kirim request POST ke backend secara asynchronous
-            fetch(generateForm.action, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => {
-                // Respons POST dari generate (biasanya redirect ke /jadwal)
-                // Kita tidak perlu memproses respons ini di sini karena akan ada redirect
-                // Flashed messages akan menangani feedback akhir.
-                if (response.redirected) {
-                    window.location.href = response.url; // Ikuti redirect
-                } else {
-                    // Jika tidak di-redirect (misal ada error langsung dari backend sebelum redirect)
-                    // Maka kita harus mengambil dan menampilkan pesan errornya
-                    // Ini mungkin terjadi jika validasi awal di backend gagal (misal file kosong)
-                    response.json().then(data => {
-                        console.error('Error during generation:', data);
-                        clearInterval(intervalId); // Hentikan polling
-                        progressBar.style.width = '0%';
-                        progressBar.textContent = '0%';
-                        progressBar.classList.remove('progress-bar-animated', 'bg-success');
-                        progressBar.classList.add('bg-danger');
-                        progressMessage.textContent = 'Error: ' + data.message;
-                        // Tampilkan kembali form karena proses tidak dimulai
-                        generateFormCard.style.display = 'block';
-                        progressCard.style.display = 'none';
-                    }).catch(error => {
-                        console.error('Error parsing response from server during async POST:', error);
-                        progressMessage.textContent = 'Terjadi kesalahan tidak terduga saat memulai proses.';
-                        clearInterval(intervalId);
-                        generateFormCard.style.display = 'block';
-                        progressCard.style.display = 'none';
-                    });
-                }
-            })
-            .catch(error => {
-                console.error('Network error during generation:', error);
-                clearInterval(intervalId); // Hentikan polling
-                progressBar.style.width = '0%';
-                progressBar.textContent = '0%';
-                progressBar.classList.remove('progress-bar-animated', 'bg-success');
-                progressBar.classList.add('bg-danger');
-                progressMessage.textContent = 'Koneksi terputus atau error server.';
-                generateFormCard.style.display = 'block'; // Tampilkan kembali form
-                progressCard.style.display = 'none'; // Sembunyikan progress
-            });
-
-            // Mulai polling untuk progres
-            intervalId = setInterval(fetchProgress, 1000); // Poll setiap 1 detik
-        });
-
-        function fetchProgress() {
-            fetch("{{ url_for('get_generate_progress') }}")
-                .then(response => response.json())
-                .then(data => {
-                    const total = data.total_items;
-                    const processed = data.processed_items;
-                    const status = data.status;
-                    const message = data.message;
-
-                    let percentage = 0;
-                    if (total > 0) {
-                        percentage = Math.round((processed / total) * 100);
-                    }
-                    
-                    progressBar.style.width = percentage + '%';
-                    progressBar.textContent = percentage + '%';
-                    progressMessage.textContent = message;
-
-                    if (status === 'completed' || status === 'failed') {
-                        clearInterval(intervalId); // Hentikan polling
-                        progressBar.classList.remove('progress-bar-animated');
-                        if (status === 'completed') {
-                            progressBar.classList.remove('bg-danger');
-                            progressBar.classList.add('bg-success');
-                        } else { // failed
-                            progressBar.classList.remove('bg-success');
-                            progressBar.classList.add('bg-danger');
-                        }
-                        // Karena backend akan redirect setelah proses selesai,
-                        // kita tidak perlu secara eksplisit menyembunyikan card progres di sini.
-                        // Redirect akan mengalihkan halaman.
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching progress:', error);
-                    clearInterval(intervalId); // Hentikan polling jika ada error
-                    progressMessage.textContent = 'Gagal memuat progres.';
-                    progressBar.classList.remove('progress-bar-animated', 'bg-success');
-                    progressBar.classList.add('bg-danger');
-                    // Jika polling gagal terus, mungkin tampilkan kembali form
-                    // generateFormCard.style.display = 'block';
-                    // progressCard.style.display = 'none';
-                });
-        }
-    });
-</script>
 {% endblock %}
