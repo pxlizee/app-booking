@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}Ketersediaan Ruangan{% endblock %}
+{% block content %}
+<div class="card p-4 mb-5 shadow-sm">
+    <h2 class="card-title mb-3"><i class="bi bi-calendar-day"></i> Pilih Hari</h2>
+    <hr>
+    <form action="{{ url_for('halaman_ruangan_tersedia') }}" method="GET" class="row g-3 align-items-end mt-1">
+        <div class="col-md-9">
+            <label for="hari" class="form-label">Pilih hari untuk melihat ketersediaan ruangan:</label>
+            <select name="hari" id="hari" class="form-select">
+                <option value="" disabled {% if not selected_day %}selected{% endif %}>-- Pilih Hari --</option>
+                {% for day in days %}
+                <option value="{{ day }}" {% if selected_day == day %}selected{% endif %}>{{ day }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <button type="submit" class="btn btn-primary w-100">Tampilkan Ketersediaan</button>
+        </div>
+    </form>
+</div>
+
+{% if selected_day %}
+<div class="card p-4 shadow-sm">
+    <h2 class="card-title mb-3"><i class="bi bi-clock"></i> Ketersediaan Ruangan <span class="fs-5 text-muted">(Hari {{ selected_day }})</span></h2>
+    <hr>
+    {% if room_availability_blocks %} {# Memastikan ada blok ketersediaan untuk ditampilkan #}
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4"> {# Grid responsif untuk kartu-kartu ruangan #}
+            {% for room, blocks in room_availability_blocks.items() %}
+            <div class="col">
+                <div class="card h-100 border-{% if not blocks %}secondary{% else %}primary{% endif %}"> {# Border kartu berdasarkan ada/tidaknya blok #}
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-building me-2"></i> <strong>{{ room }}</strong>
+                    </div>
+                    <div class="card-body d-flex flex-column" style="max-height: 350px; overflow-y: auto;"> {# Membuat body kartu bisa di-scroll #}
+                        {% if blocks %}
+                            <ul class="list-group list-group-flush flex-grow-1">
+                                {% for block in blocks %}
+                                {% set bg_class = "" %}
+                                {% set text_class = "text-white" %}
+                                {% if block.status == 'Tersedia' %}
+                                    {% set bg_class = "bg-success" %}
+                                {% elif block.status == 'Terpakai' %}
+                                    {% set bg_class = "bg-danger" %}
+                                {% else %} {# Istirahat #}
+                                    {% set bg_class = "bg-secondary" %}
+                                    {% set text_class = "text-white-50" %}
+                                {% endif %}
+                                {# --- PENTING: Membuat blok Tersedia bisa diklik --- #}
+                                {% if block.status == 'Tersedia' %}
+                                    {# Derive gedung and lantai from room name for URL parameters #}
+                                    {# Logika ini sudah sesuai dengan yang Anda inginkan untuk Lab Komputer (A4) #}
+                                    {% set gedung_name = room[0] if room.startswith('B') else 'A' %}
+                                    {% set lantai_name = room[1] if room.startswith('B') and room[1].isdigit() else '4' %}
+                                    <a href="{{ url_for('halaman_booking', 
+                                                    day=selected_day,
+                                                    gedung=gedung_name,
+                                                    lantai=lantai_name,
+                                                    room=room, 
+                                                    start_time=block.start, 
+                                                    end_time=block.end
+                                                ) }}" 
+                                       class="list-group-item d-flex justify-content-between align-items-center {{ bg_class }} {{ text_class }} list-group-item-action">
+                                        {{ block.start }} - {{ block.end }}
+                                        <span class="badge bg-light text-dark rounded-pill">Booking</span> {# <--- PERUBAHAN DI SINI #}
+                                    </a>
+                                {% else %}
+                                    {# Blok selain "Tersedia" tidak bisa diklik #}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center {{ bg_class }} {{ text_class }}">
+                                        {{ block.start }} - {{ block.end }}
+                                        <span class="badge bg-light text-dark rounded-pill">{{ block.status }}</span> {# Tidak ada perubahan di sini #}
+                                    </li>
+                                {% endif %}
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <div class="text-center text-muted py-4">Tidak ada data ketersediaan untuk ruangan ini.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info text-center" role="alert">
+            Tidak ada data ketersediaan untuk hari ini.
+            <br>
+            {% if not selected_day %}
+                Silakan pilih hari untuk menampilkan ketersediaan.
+            {% else %}
+                Tidak ada jadwal yang terdeteksi untuk hari {{ selected_day }} atau daftar ruangan kosong.
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
