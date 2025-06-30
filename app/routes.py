@@ -40,31 +40,39 @@ def parse_time(t_str):
             except (ValueError, TypeError):
                 return None
 
-def is_bentrok(hari, mulai_baru, selesai_baru, ruangan_id, kelas, nama_dosen_baru, tipe_kelas):
+def is_bentrok(hari, mulai_baru, selesai_baru, ruangan_id, kelas, nama_dosen_baru, tipe_kelas, jadwal_id_to_ignore=None):
     mulai_baru_time = parse_time(mulai_baru)
     selesai_baru_time = parse_time(selesai_baru)
     if not (mulai_baru_time and selesai_baru_time):
         return False
 
-    conflicting_schedules = Jadwal.query.filter(
+    query = Jadwal.query.filter(
         Jadwal.hari == hari,
         db.func.time(Jadwal.jam_selesai) > mulai_baru_time,
         db.func.time(Jadwal.jam_mulai) < selesai_baru_time
-    ).all()
+    )
 
+    # Jika sedang mengedit, abaikan jadwal dengan ID ini
+    if jadwal_id_to_ignore:
+        query = query.filter(Jadwal.id != jadwal_id_to_ignore)
+
+    conflicting_schedules = query.all()
+    
+    # (Sisa logika pengecekan bentrok sama seperti sebelumnya...)
     for sched in conflicting_schedules:
+        # ... (pengecekan bentrok ruangan, kelas, dosen) ...
+        # (tidak ada perubahan di sini)
         if tipe_kelas == 'Offline' and sched.tipe_kelas == 'Offline' and sched.ruangan_id == int(ruangan_id):
-            flash(f"Jadwal bentrok: Ruangan '{sched.ruangan}' sudah dipakai oleh '{sched.mata_kuliah}' pada jam tersebut.", "danger")
+            flash(f"Jadwal bentrok: Ruangan sudah dipakai.", "danger")
             return True
         if sched.kelas == kelas:
-            flash(f"Jadwal bentrok: Kelas '{kelas}' sudah ada jadwal lain ('{sched.mata_kuliah}') pada jam tersebut.", "danger")
+            flash(f"Jadwal bentrok: Kelas sudah ada jadwal lain.", "danger")
             return True
         if sched.nama_dosen == nama_dosen_baru:
-            flash(f"Jadwal bentrok: Dosen '{nama_dosen_baru}' sudah mengajar di kelas lain ('{sched.mata_kuliah}') pada jam tersebut.", "danger")
+            flash(f"Jadwal bentrok: Dosen sudah mengajar.", "danger")
             return True
             
     return False
-
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated: return redirect(url_for('routes.landing_page'))
@@ -260,14 +268,168 @@ def halaman_generate():
 
 @bp.route('/generate/start', methods=['POST'])
 @login_required
+def is_bentrok_cache(hari, mulai_baru_time, selesai_baru_time, ruangan_id, kelas, nama_dosen, cache):
+    # Cek bentrok ruangan (hanya jika kelas Offline)
+    if ruangan_id:
+        for jadwal_ada in cache['ruangan'].get(hari, {}).get(ruangan_id, []):
+            mulai_ada = parse_time(jadwal_ada.jam_mulai)
+            selesai_ada = parse_time(jadwal_ada.jam_selesai)
+            if mulai_ada < selesai_baru_time and selesai_ada > mulai_baru_time:
+                return True # Bentrok ruangan
+
+    # Cek bentrok kelas
+    for jadwal_ada in cache['kelas'].get(hari, {}).get(kelas, []):
+        mulai_ada = parse_time(jadwal_ada.jam_mulai)
+        selesai_ada = parse_time(jadwal_ada.jam_selesai)
+        if mulai_ada < selesai_baru_time and selesai_ada > mulai_baru_time:
+            return True # Bentrok kelas
+
+    # Cek bentrok dosen
+    for jadwal_ada in cache['dosen'].get(hari, {}).get(nama_dosen, []):
+        mulai_ada = parse_time(jadwal_ada.jam_mulai)
+        selesai_ada = parse_time(jadwal_ada.jam_selesai)
+        if mulai_ada < selesai_baru_time and selesai_ada > mulai_baru_time:
+            return True # Bentrok dosen
+            
+    return False
+# Hapus fungsi start_generation yang lama, dan ganti dengan ini:
+@bp.route('/generate/start', methods=['POST'])
+@login_required
+
+
 def start_generation():
-    # Logika kompleks dari 'halaman_generate' lama akan ada di sini
-    # Karena sangat kompleks dan memerlukan adaptasi besar ke database baru,
-    # kita akan menampilkan pesan bahwa fitur ini dalam pengembangan.
-    flash("Fitur Generate Jadwal Otomatis sedang dalam pengembangan lanjut.", "info")
-    return redirect(url_for('routes.halaman_generate'))
+    if current_user.role != 'admin':
+        flash("Hanya admin yang dapat mengakses fitur ini.", "danger")
+        return redirect(url_for('routes.landing_page'))
+
+    file = request.files.get('file')
+    if not file or file.filename == '':
+        flash('Tidak ada file yang dipilih.', 'warning')
+        return redirect(url_for('routes.halaman_generate'))
+
+    try:
+        df = pd.read_excel(file) if file.filename.endswith('.xlsx') else pd.read_csv(file)
+        df.columns = [col.strip().upper() for col in df.columns]
+        required_columns = ['MATA KULIAH', 'SKS', 'KELAS', 'DOSEN PENGAJAR']
+        if not all(col in df.columns for col in required_columns):
+            flash(f"File harus memiliki kolom: {', '.join(required_columns)}", 'danger')
+            return redirect(url_for('routes.halaman_generate'))
+
+        # 1. PRE-FETCH DATA UNTUK EFISIENSI
+        # Ambil semua jadwal yang ada dari DB
+        all_existing_schedules = Jadwal.query.all()
+        # Ambil semua ruangan kelas dari DB
+        all_available_rooms = Ruangan.query.filter(Ruangan.kategori == 'Kelas').all()
+
+        # Buat cache untuk pengecekan bentrok yang cepat
+        existing_schedules_cache = {
+            'ruangan': defaultdict(lambda: defaultdict(list)),
+            'kelas': defaultdict(lambda: defaultdict(list)),
+            'dosen': defaultdict(lambda: defaultdict(list))
+        }
+        for sch in all_existing_schedules:
+            if sch.ruangan_id:
+                existing_schedules_cache['ruangan'][sch.hari][sch.ruangan_id].append(sch)
+            existing_schedules_cache['kelas'][sch.hari][sch.kelas].append(sch)
+            existing_schedules_cache['dosen'][sch.hari][sch.nama_dosen].append(sch)
+        
+        # 2. PERSIAPAN LOOPING
+        new_schedules_to_add = []
+        failed_to_schedule = []
+        hari_kerja = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat']
+        jam_mulai_kerja = time(8, 0)
+        jam_selesai_kerja = time(18, 0)
+        jam_istirahat_mulai = time(12, 0)
+        jam_istirahat_selesai = time(13, 0)
+
+        # 3. PROSES GENERATE JADWAL
+        for index, row in df.iterrows():
+            # Konversi SKS ke durasi menit
+            try:
+                sks = int(row['SKS'])
+                duration_minutes = sks * 50
+            except (ValueError, TypeError):
+                failed_to_schedule.append(f"{row['MATA KULIAH']} ({row['KELAS']}) - SKS tidak valid")
+                continue
+
+            slot_ditemukan = False
+            # Loop setiap hari kerja
+            for hari in hari_kerja:
+                if slot_ditemukan: break
+                
+                # Loop setiap ruangan yang tersedia
+                for ruangan in all_available_rooms:
+                    if slot_ditemukan: break
+                    
+                    # Loop setiap 15 menit dari jam mulai sampai jam selesai kerja
+                    current_time_slot = datetime.combine(datetime.today(), jam_mulai_kerja)
+                    while current_time_slot.time() < jam_selesai_kerja:
+                        
+                        # Lewati jam istirahat
+                        if jam_istirahat_mulai <= current_time_slot.time() < jam_istirahat_selesai:
+                            current_time_slot = datetime.combine(datetime.today(), jam_istirahat_selesai)
+                            continue
+
+                        mulai_baru = current_time_slot.time()
+                        selesai_baru_dt = current_time_slot + timedelta(minutes=duration_minutes)
+                        selesai_baru = selesai_baru_dt.time()
+
+                        # Jika jadwal melewati jam kerja, hentikan loop waktu untuk hari ini
+                        if selesai_baru > jam_selesai_kerja or selesai_baru_dt.day > current_time_slot.day:
+                            break
+                        
+                        # Cek bentrok dengan jadwal yang sudah ada (di DB dan di cache sesi ini)
+                        if not is_bentrok_cache(hari, mulai_baru, selesai_baru, ruangan.id, row['KELAS'], row['DOSEN PENGAJAR'], existing_schedules_cache):
+                            # Slot ditemukan!
+                            new_jadwal = Jadwal(
+                                nama_dosen=row['DOSEN PENGAJAR'],
+                                mata_kuliah=row['MATA KULIAH'],
+                                sks=sks,
+                                kelas=row['KELAS'],
+                                hari=hari,
+                                jam_mulai=mulai_baru.strftime('%H:%M'),
+                                jam_selesai=selesai_baru.strftime('%H:%M'),
+                                tipe_kelas='Offline',
+                                ruangan_id=ruangan.id,
+                                user_id=current_user.id
+                            )
+                            new_schedules_to_add.append(new_jadwal)
+
+                            # Perbarui cache agar jadwal berikutnya tidak bentrok dengan yang ini
+                            existing_schedules_cache['ruangan'][hari][ruangan.id].append(new_jadwal)
+                            existing_schedules_cache['kelas'][hari][row['KELAS']].append(new_jadwal)
+                            existing_schedules_cache['dosen'][hari][row['DOSEN PENGAJAR']].append(new_jadwal)
+                            
+                            slot_ditemukan = True
+                            break # Hentikan loop waktu, lanjut ke matkul berikutnya
+
+                        # Lanjut ke slot waktu berikutnya (15 menit)
+                        current_time_slot += timedelta(minutes=15)
+
+            if not slot_ditemukan:
+                failed_to_schedule.append(f"{row['MATA KULIAH']} ({row['KELAS']}) - Tidak ada slot tersedia")
+        
+        # 4. SIMPAN KE DATABASE
+        if new_schedules_to_add:
+            db.session.add_all(new_schedules_to_add)
+            db.session.commit()
+            flash(f"Generate Selesai! {len(new_schedules_to_add)} jadwal berhasil dibuat.", 'success')
+
+        if failed_to_schedule:
+            flash(f"{len(failed_to_schedule)} mata kuliah gagal dijadwalkan. Silakan periksa bentrok atau coba lagi.", 'warning')
+            for item in failed_to_schedule[:5]: # Tampilkan 5 error pertama
+                flash(item, 'secondary')
+
+        return redirect(url_for('routes.halaman_jadwal'))
+
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Terjadi error saat proses generate: {e}", "danger")
+        return redirect(url_for('routes.halaman_generate'))
 
 
+# Pastikan fungsi halaman_import Anda terlihat seperti ini
+# Ganti fungsi halaman_import yang lama dengan versi baru yang lebih informatif ini
 @bp.route('/import', methods=['GET', 'POST'])
 @login_required
 def halaman_import():
@@ -278,54 +440,205 @@ def halaman_import():
     if request.method == 'POST':
         file = request.files.get('file')
         if not file or file.filename == '':
-            flash('Tidak ada file yang dipilih.', 'warning')
-            return redirect(request.url)
+            flash('Tidak ada file yang dipilih.', 'warning'); return redirect(request.url)
 
         try:
             df = pd.read_excel(file) if file.filename.endswith('.xlsx') else pd.read_csv(file)
             required_columns = ['Nama Dosen', 'Mata Kuliah', 'SKS', 'Kelas', 'Hari', 'Jam Mulai', 'Jam Selesai', 'Tipe Kelas']
             if not all(col in df.columns for col in required_columns):
-                flash(f"File harus memiliki kolom: {', '.join(required_columns)}", 'danger')
-                return redirect(request.url)
+                flash(f"File harus memiliki kolom: {', '.join(required_columns)}", 'danger'); return redirect(request.url)
 
-            jadwal_ditambahkan = 0
-            jadwal_bentrok = 0
-            for _, row in df.iterrows():
-                # Cek bentrok sebelum menambahkan
+            all_existing_schedules = Jadwal.query.all()
+            existing_schedules_cache = defaultdict(lambda: defaultdict(list))
+            for sch in all_existing_schedules:
+                if sch.ruangan_id: existing_schedules_cache['ruangan'][sch.hari][sch.ruangan_id].append(sch)
+                existing_schedules_cache['kelas'][sch.hari][sch.kelas].append(sch)
+                existing_schedules_cache['dosen'][sch.hari][sch.nama_dosen].append(sch)
+
+            jadwal_ditambahkan = []
+            error_details = [] # List untuk menyimpan detail error
+
+            for index, row in df.iterrows():
+                baris_ke = index + 2 # Nomor baris di Excel (header di baris 1)
+                mulai_time = parse_time(row['Jam Mulai'])
+                selesai_time = parse_time(row['Jam Selesai'])
+
+                if not (mulai_time and selesai_time):
+                    error_details.append(f"Baris {baris_ke}: Format 'Jam Mulai' atau 'Jam Selesai' salah.")
+                    continue
+
                 ruangan_id = None
-                if row['Tipe Kelas'] == 'Offline':
-                    ruangan = Ruangan.query.filter_by(nama_ruangan=row.get('Ruangan')).first()
+                if row['Tipe Kelas'].strip().lower() == 'offline':
+                    nama_ruangan_excel = row.get('Ruangan')
+                    if not isinstance(nama_ruangan_excel, str) or not nama_ruangan_excel.strip():
+                        error_details.append(f"Baris {baris_ke}: Kolom 'Ruangan' kosong untuk kelas Offline.")
+                        continue
+                    
+                    ruangan = Ruangan.query.filter_by(nama_ruangan=nama_ruangan_excel.strip()).first()
                     if ruangan:
                         ruangan_id = ruangan.id
                     else:
-                        # Jika ruangan tidak ditemukan, lewati atau beri pesan error
-                        continue 
-
-                if not is_bentrok(row['Hari'], row['Jam Mulai'], row['Jam Selesai'], ruangan_id, row['Kelas'], row['Nama Dosen'], row['Tipe Kelas']):
-                    new_jadwal = Jadwal(
-                        nama_dosen=row['Nama Dosen'],
-                        mata_kuliah=row['Mata Kuliah'],
-                        sks=row['SKS'],
-                        kelas=row['Kelas'],
-                        hari=row['Hari'],
-                        jam_mulai=row['Jam Mulai'],
-                        jam_selesai=row['Jam Selesai'],
-                        tipe_kelas=row['Tipe Kelas'],
-                        ruangan_id=ruangan_id,
-                        user_id=current_user.id
-                    )
-                    db.session.add(new_jadwal)
-                    jadwal_ditambahkan += 1
+                        error_details.append(f"Baris {baris_ke}: Ruangan '{nama_ruangan_excel}' tidak ditemukan di database.")
+                        continue
+                
+                if not is_bentrok_cache(row['Hari'], mulai_time, selesai_time, ruangan_id, row['Kelas'], row['Nama Dosen'], existing_schedules_cache):
+                    # (Logika menambahkan jadwal sama seperti sebelumnya)
+                    new_jadwal = Jadwal(nama_dosen=row['Nama Dosen'], mata_kuliah=row['Mata Kuliah'], sks=int(row['SKS']), kelas=row['Kelas'], hari=row['Hari'], jam_mulai=mulai_time.strftime('%H:%M'), jam_selesai=selesai_time.strftime('%H:%M'), tipe_kelas=row['Tipe Kelas'], ruangan_id=ruangan_id, user_id=current_user.id)
+                    jadwal_ditambahkan.append(new_jadwal)
+                    if ruangan_id: existing_schedules_cache['ruangan'][new_jadwal.hari][ruangan_id].append(new_jadwal)
+                    existing_schedules_cache['kelas'][new_jadwal.hari][new_jadwal.kelas].append(new_jadwal)
+                    existing_schedules_cache['dosen'][new_jadwal.hari][new_jadwal.nama_dosen].append(new_jadwal)
                 else:
-                    jadwal_bentrok += 1
+                    error_details.append(f"Baris {baris_ke}: Jadwal untuk kelas '{row['Kelas']}' bentrok.")
+
+            if jadwal_ditambahkan:
+                db.session.add_all(jadwal_ditambahkan)
+                db.session.commit()
             
-            db.session.commit()
-            flash(f"Import selesai! {jadwal_ditambahkan} jadwal berhasil ditambahkan. {jadwal_bentrok} jadwal dilewati karena bentrok.", 'success')
+            flash(f"Import selesai! {len(jadwal_ditambahkan)} jadwal berhasil ditambahkan.", 'success')
+            if error_details:
+                gagal_count = len(error_details)
+                flash(f"{gagal_count} jadwal gagal diimpor. Lihat detail di bawah:", 'warning')
+                for error in error_details[:5]: # Tampilkan 5 error pertama
+                    flash(error, 'secondary')
 
         except Exception as e:
             db.session.rollback()
-            flash(f"Terjadi error saat import file: {e}", 'danger')
+            flash(f"Terjadi error saat memproses file: {e}", 'danger')
         
         return redirect(url_for('routes.halaman_jadwal'))
         
     return render_template('import_jadwal.html')
+
+@bp.route('/download/template_generate')
+@login_required
+def download_template():
+    if current_user.role != 'admin':
+        flash("Hanya admin yang bisa mengakses fitur ini.", "danger")
+        return redirect(url_for('routes.landing_page'))
+
+    # Membuat file Excel di memori
+    output = io.BytesIO()
+
+    # Membuat DataFrame kosong dengan header yang dibutuhkan
+    df_template = pd.DataFrame(columns=[
+        'KODE',
+        'DOSEN PENGAJAR',
+        'MATA KULIAH',
+        'SMT',
+        'SKS',
+        'KELAS',
+        'DOSEN_HARI_KAMPUS',
+        'DOSEN_JAM_KAMPUS',
+        'TIPE_KELAS'
+    ])
+    
+    # Menulis DataFrame ke file Excel di memori
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_template.to_excel(writer, index=False, sheet_name='Template')
+    
+    output.seek(0)
+    
+    # Mengirim file ke browser pengguna untuk diunduh
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='template_generate_jadwal.xlsx'
+    )
+    
+# Tambahkan fungsi baru ini di app/routes.py
+@bp.route('/download/template_import')
+@login_required
+def download_template_import():
+    if current_user.role != 'admin':
+        return redirect(url_for('routes.landing_page'))
+
+    output = io.BytesIO()
+
+    # Membuat DataFrame dengan kolom sesuai permintaan Anda
+    df_template = pd.DataFrame(columns=[
+        'No',
+        'Nama Dosen',
+        'Mata Kuliah',
+        'Semester',
+        'SKS',
+        'Kelas',
+        'Hari',
+        'Jam Mulai', # Dipecah dari kolom "Jam"
+        'Jam Selesai',# Dipecah dari kolom "Jam"
+        'Tipe Kelas', # Diperlukan oleh sistem
+        'Ruangan'     # Diperlukan untuk kelas Offline
+    ])
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_template.to_excel(writer, index=False, sheet_name='Template Import')
+    
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='template_import_jadwal.xlsx'
+    )
+    
+@bp.route('/jadwal/edit/<int:jadwal_id>', methods=['GET'])
+@login_required
+def edit_jadwal(jadwal_id):
+    if current_user.role != 'admin':
+        flash("Hanya admin yang dapat mengakses halaman ini.", "danger")
+        return redirect(url_for('routes.halaman_jadwal'))
+
+    # Ambil data jadwal dari database
+    jadwal = Jadwal.query.get_or_404(jadwal_id)
+
+    # Siapkan data untuk dioper ke formulir
+    form_data = {
+        'nama_dosen': jadwal.nama_dosen,
+        'mata_kuliah': jadwal.mata_kuliah,
+        'sks': jadwal.sks,
+        'kelas': jadwal.kelas,
+        'hari': jadwal.hari,
+        'jam_mulai': jadwal.jam_mulai,
+        'jam_selesai': jadwal.jam_selesai,
+        'tipe_kelas': jadwal.tipe_kelas,
+        'ruangan': jadwal.ruangan_id,
+        'lantai': jadwal.ruangan_obj.lantai_id if jadwal.ruangan_obj else None,
+        'gedung': jadwal.ruangan_obj.lantai.gedung_id if jadwal.ruangan_obj else None,
+    }
+
+    # Render template booking, tapi dalam mode edit
+    return render_template('booking_form.html', edit_mode=True, jadwal_id=jadwal.id, form_data=form_data)
+
+
+@bp.route('/jadwal/update/<int:jadwal_id>', methods=['POST'])
+@login_required
+def update_jadwal(jadwal_id):
+    if current_user.role != 'admin':
+        return redirect(url_for('routes.landing_page'))
+
+    # Ambil jadwal yang akan diupdate dari DB
+    jadwal_to_update = Jadwal.query.get_or_404(jadwal_id)
+    form = request.form
+    
+    # Cek bentrok, tapi abaikan jadwal saat ini (dengan ID-nya)
+    ruangan_id = form.get('ruangan') if form.get('tipe_kelas') == 'Offline' else None
+    if is_bentrok(form.get('hari'), form.get('jam_mulai'), form.get('jam_selesai'), ruangan_id, form.get('kelas'), form.get('dosen'), form.get('tipe_kelas'), jadwal_id_to_ignore=jadwal_id):
+        return redirect(url_for('routes.edit_jadwal', jadwal_id=jadwal_id))
+
+    # Update data di object jadwal
+    jadwal_to_update.nama_dosen = form.get('dosen')
+    jadwal_to_update.mata_kuliah = form.get('matkul')
+    jadwal_to_update.sks = int(form.get('sks', 0))
+    jadwal_to_update.kelas = form.get('kelas')
+    jadwal_to_update.hari = form.get('hari')
+    jadwal_to_update.jam_mulai = form.get('jam_mulai')
+    jadwal_to_update.jam_selesai = form.get('jam_selesai')
+    jadwal_to_update.tipe_kelas = form.get('tipe_kelas')
+    jadwal_to_update.ruangan_id = ruangan_id
+
+    # Simpan perubahan ke database
+    db.session.commit()
+    flash('Jadwal berhasil diperbarui!', 'success')
+    return redirect(url_for('routes.halaman_jadwal'))

@@ -1,15 +1,15 @@
 {% extends 'base.html' %}
 {% block title %}Generate Jadwal Otomatis{% endblock %}
 {% block content %}
-<div class="card border-start border-primary border-5 shadow-lg mb-5">
-    <div class="card-body p-5">
-        <h2 class="card-title mb-3"><i class="bi bi-magic me-2"></i>Generate Jadwal Otomatis</h2>
+<div class="card">
+    <div class="card-body p-4">
+        <h5 class="card-title"><i class="bi bi-magic me-2"></i>Generate Jadwal Otomatis</h5>
+        <p class="text-muted">Fitur ini akan membuat seluruh jadwal satu semester secara otomatis. (Saat ini dalam pengembangan lanjut)</p>
         <hr>
-        <p class="text-muted">Fitur ini akan membuat seluruh jadwal satu semester secara otomatis berdasarkan file daftar mata kuliah dan dosen. (Saat ini dalam pengembangan lanjut)</p>
         
         <form id="generateForm" action="{{ url_for('routes.start_generation') }}" method="POST" enctype="multipart/form-data" class="mt-4">
             <div class="mb-3">
-                <label for="file" class="form-label fw-bold">Upload File Excel (.xlsx) atau CSV (.csv)</label>
+                <label for="file" class="form-label fw-bold">1. Upload File Excel (.xlsx) atau CSV (.csv)</label>
                 <div class="input-group">
                     <span class="input-group-text"><i class="bi bi-file-earmark-spreadsheet"></i></span>
                     <input class="form-control" type="file" id="file" name="file" accept=".xlsx, .csv" required>
@@ -17,26 +17,19 @@
                 <div class="form-text mt-2">Pastikan file memiliki kolom: MATA KULIAH, SKS, KELAS, DOSEN PENGAJAR.</div>
             </div>
             <div class="d-grid">
-                <button type="submit" class="btn btn-dark mt-3"><i class="bi bi-play-circle-fill me-2"></i>Mulai Generate Jadwal</button>
+                <button type="submit" class="btn btn-primary mt-3"><i class="bi bi-play-circle-fill me-2"></i>Mulai Generate Jadwal</button>
             </div>
         </form>
-        <div class="d-grid mt-2">
-            <a href="#" class="btn btn-outline-info w-100"><i class="bi bi-download"></i> Unduh Template Excel</a>
-        </div>
-    </div>
-</div>
 
-<div class="card p-4 mb-5 shadow-lg" id="progress-card" style="display: none;">
-    <h2 class="card-title mb-3"><i class="bi bi-hourglass-split"></i> Progres Generate Jadwal</h2>
-    <hr>
-    <div class="text-center mb-3">
-        <div class="spinner-grow text-info" role="status">
-            <span class="visually-hidden">Loading...</span>
+        <hr class="my-4">
+        
+        <div>
+             <h6 class="fw-bold">Belum Punya Template?</h6>
+             <p class="text-muted small">Unduh template file Excel di bawah ini untuk memastikan format file Anda benar.</p>
+             <div class="d-grid">
+                <a href="{{ url_for('routes.download_template') }}" class="btn btn-success"><i class="bi bi-download me-2"></i>Unduh Template Excel</a>
+            </div>
         </div>
-        <p class="mt-2" id="progress-message">Memulai...</p>
-    </div>
-    <div class="progress" style="height: 30px;">
-        <div id="progressBar" class="progress-bar bg-info progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
     </div>
 </div>
 {% endblock %}

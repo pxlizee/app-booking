@@ -1,49 +1,40 @@
 {% extends "base.html" %}
-
 {% block title %}Lihat Jadwal{% endblock %}
-
 {% block content %}
-<h3 class="mb-4 text-decoration-underline"><i class="bi bi-calendar-event me-2"></i>Jadwal Saat Ini</h3>
-
-<div class="card border-0 shadow-lg bg-light mb-4">
-    <div class="card-body p-4">
-        <h5 class="card-title mb-3"><i class="bi bi-filter-circle me-2"></i>Filter & Aksi Jadwal</h5>
-        <form method="GET" action="{{ url_for('routes.halaman_jadwal') }}" class="row g-3 align-items-center">
-            <div class="col-lg-3">
-                <select class="form-select form-select-sm" name="filter_by">
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Filter Jadwal</h5>
+        <form method="GET" action="{{ url_for('routes.halaman_jadwal') }}" class="row g-2 align-items-center">
+            <div class="col-md-3">
+                <select class="form-select" name="filter_by">
                     <option value="Hari" {% if filter_by == 'Hari' %}selected{% endif %}>Hari</option>
                     <option value="Ruangan" {% if filter_by == 'Ruangan' %}selected{% endif %}>Ruangan</option>
                     <option value="Kelas" {% if filter_by == 'Kelas' %}selected{% endif %}>Kelas</option>
                     <option value="Dosen" {% if filter_by == 'Dosen' %}selected{% endif %}>Dosen</option>
                 </select>
             </div>
-            <div class="col-lg-5">
-                <input type="text" class="form-control form-control-sm" name="filter_value" placeholder="Ketik nilai filter..." value="{{ filter_value }}">
+            <div class="col-md-7">
+                <input type="text" class="form-control" name="filter_value" placeholder="Ketik nilai filter..." value="{{ filter_value }}">
             </div>
-            <div class="col-lg-2">
-                <button type="submit" class="btn btn-outline-primary w-100 btn-sm"><i class="bi bi-search"></i> Filter</button>
-            </div>
-            <div class="col-lg-2">
-                <a href="#" class="btn btn-outline-success w-100 btn-sm"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i></button>
             </div>
         </form>
-        {% if current_user.role == 'admin' %}
-        <div class="d-grid gap-2 mt-3">
-             <form method="POST" action="#" onsubmit="return confirm('Apakah Anda yakin ingin menghapus SEMUA jadwal? Aksi ini tidak dapat dibatalkan!');">
-                <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-trash-fill me-2"></i>Hapus Semua Jadwal</button>
-            </form>
-        </div>
-        {% endif %}
     </div>
 </div>
 
-{% if jadwal_list %}
-<div class="table-responsive">
-    <table class="table table-bordered table-sm">
-        <thead class="table-light text-primary">
+<div class="card">
+    <div class="card-header fw-bold">
+        Hasil Jadwal
+    </div>
+    <div class="card-body p-0">
+        {% if jadwal_list %}
+       <div class="table-responsive">
+    <table class="table table-striped table-hover mb-0">
+        <thead>
             <tr>
                 {% for col in header %}
-                <th scope="col">{{ col }}</th>
+                    <th scope="col">{{ col }}</th>
                 {% endfor %}
                 <th scope="col">Aksi</th>
             </tr>
@@ -65,9 +56,13 @@
                 <td>{{ item.tipe_kelas }}</td>
                 <td>
                     {% if current_user.role == 'admin' %}
-                    <form method="POST" action="#" onsubmit="return confirm('Yakin ingin menghapus jadwal ini?');" style="display:inline;">
-                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash-fill"></i></button>
-                    </form>
+                        <a href="{{ url_for('routes.edit_jadwal', jadwal_id=item.id) }}" class="btn btn-warning btn-sm" title="Edit">
+                            <i class="bi bi-pencil-fill"></i>
+                        </a>
+                        
+                        <form method="POST" action="#" onsubmit="return confirm('Yakin ingin menghapus jadwal ini?');" style="display:inline;">
+                            <button type="submit" class="btn btn-sm btn-danger" title="Hapus"><i class="bi bi-trash-fill"></i></button>
+                        </form>
                     {% endif %}
                 </td>
             </tr>
@@ -75,10 +70,11 @@
         </tbody>
     </table>
 </div>
-{% else %}
-<div class="alert alert-warning text-center" role="alert">
-    Tidak ada jadwal yang ditemukan. Silakan coba filter yang lain atau buat jadwal baru.
+        {% else %}
+        <div class="text-center p-4 text-muted">
+            Tidak ada jadwal yang ditemukan.
+        </div>
+        {% endif %}
+    </div>
 </div>
-{% endif %}
-
 {% endblock %}
